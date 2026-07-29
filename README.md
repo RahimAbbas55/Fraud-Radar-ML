@@ -96,4 +96,4 @@ Download the dataset from [Kaggle](https://www.kaggle.com/mlg-ulb/creditcardfrau
 
 ---
 
-*Part of a data science portfolio targeting UK fintech roles. See also: [UK-Tech-Job-Analyzer](#) and [Credit Risk ML Pipeline](#).*
+*See also: [UK-Tech-Job-Analyzer](#) and [Credit Risk ML Pipeline](#).*
