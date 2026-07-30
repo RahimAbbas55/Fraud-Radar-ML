@@ -1,4 +1,5 @@
 # Data
+data/raw/
 data/*.csv
 data/*.zip
 !data/.gitkeep
