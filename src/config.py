@@ -4,7 +4,7 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT_DIR / "data"
 MODELS_DIR = ROOT_DIR / "models"
 
-RAW_DATA_PATH = DATA_DIR / "creditcard.csv"
+RAW_DATA_PATH = DATA_DIR / "raw" / "creditcard.csv"
 
 RANDOM_STATE = 42
 TARGET_COL = "Class"
