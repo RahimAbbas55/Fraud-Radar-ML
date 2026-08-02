@@ -51,10 +51,10 @@ def train_isolation_forest(X_train, y_train, contamination):
 
 def evaluate_model(model, model_type, X_test, y_test):
     """
-    Evaluation differs by model type: XGBoost outputs probabilities
-    directly via predict_proba; Isolation Forest needs its -1/1 output
-    converted to our 0/1 convention, and its decision_function negated
-    so higher score consistently means "more fraud-like" across models.
+        Evaluation differs by model type: XGBoost outputs probabilities
+        directly via predict_proba; Isolation Forest needs its -1/1 output
+        converted to our 0/1 convention, and its decision_function negated
+        so higher score consistently means "more fraud-like" across models.
     """
     if model_type == "xgboost":
         pred = model.predict(X_test)
@@ -68,6 +68,21 @@ def evaluate_model(model, model_type, X_test, y_test):
     print(results)
     print_confusion_summary(y_test, pred, model_name=model_type)
     return results
+
+
+def load_model(model_name: str):
+    """
+        Load a previously trained and saved model by name.
+        model_name should match what train.py saved it as, e.g.
+        "xgboost" or "isolation_forest" (without the .joblib extension).
+    """
+    path = MODELS_DIR / f"{model_name}.joblib"
+    if not path.exists():
+        raise FileNotFoundError(
+            f"No saved model found at {path}. "
+            f"Train it first with: python -m src.train --model {model_name}"
+        )
+    return joblib.load(path)
 
 
 def main():
