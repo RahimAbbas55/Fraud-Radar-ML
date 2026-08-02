@@ -8,3 +8,5 @@ RAW_DATA_PATH = DATA_DIR / "creditcard.csv"
 
 RANDOM_STATE = 42
 TARGET_COL = "Class"
+TEST_SIZE = 0.2
+STRATIFY_SPLIT = True
