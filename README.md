@@ -69,21 +69,31 @@ fraud-radar-ml/
 └── tests/
     └── test_features.py
 ```
-
 ## Setup
 
 ```bash
-git clone https://github.com/<your-username>/fraud-radar-ml.git
+git clone https://github.com/RahimAbbas55/Fraud-Radar-ML.git
 cd fraud-radar-ml
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Download the dataset from [Kaggle](https://www.kaggle.com/mlg-ulb/creditcardfraud) and place `creditcard.csv` in `data/`.
+Download the dataset from [Kaggle: Credit Card Fraud Detection (ULB)](https://www.kaggle.com/mlg-ulb/creditcardfraud) and place it at `data/raw/creditcard.csv`. Options:
+
+```bash
+# via Kaggle CLI (requires kaggle.json API token in ~/.kaggle/)
+kaggle datasets download -d mlg-ulb/creditcardfraud -p data/raw/ --unzip
+
+# or manually: download the zip from the Kaggle page above,
+# unzip, and move creditcard.csv into data/raw/
+```
+
+Expected shape after download: 284,807 rows × 31 columns (`Time`, `V1`–`V28`, `Amount`, `Class`).
 
 ## Roadmap
 
+- [x] Phase 1, Day 1 — data loading, validation, EDA foundations
 - [ ] **Phase 1 — Data & Modelling**: EDA, supervised vs. unsupervised model comparison (precision/recall/PR-AUC)
 - [ ] **Phase 2 — Kafka Streaming Setup**: Docker Compose Kafka broker, producer replay script, consumer service
 - [ ] **Phase 3 — Radar-Style Decision Layer + API**: rules engine, risk score + decision bands, SHAP explainability, FastAPI endpoint
@@ -91,9 +101,20 @@ Download the dataset from [Kaggle](https://www.kaggle.com/mlg-ulb/creditcardfrau
 
 ## Progress Log
 
-### Day 1
-- Project scaffolded, repo structure initialized
+### Day 1 — Data loading, validation, and EDA foundations
+- Added `src/data_loader.py`: validated data loading with explicit schema checks (missing columns, nulls, unexpected target values) so malformed data fails loudly at load time, not silently downstream
+- Fixed a data path bug: `RAW_DATA_PATH` originally pointed to `data/creditcard.csv`, but the dataset was organized at `data/raw/creditcard.csv`. Also fixed a `.gitignore` bug in the process — `data/*.csv` only ignores files directly inside `data/`, not nested folders; changed to `data/**/*.csv`
+- Added `src/features.py`: stratified train/test split utility (fraud is ~0.17% of the data, so stratification is required — a random split risks a test set with almost no fraud examples) and an `hour_of_day` feature derived from `Time`, motivated directly by the EDA finding that fraud disproportionately clusters in specific (likely overnight) time windows
+- Added `pytest.ini` to fix `src` module discovery from the project root
+- Wrote 8 unit tests across `data_loader` and `features` using small synthetic dataframes, so the suite stays fast and doesn't depend on the Kaggle CSV being present
+- EDA notebook (`01_eda.ipynb`):
+  - Class distribution: confirmed ~0.173% fraud rate (492 / 284,807) — this is why accuracy is the wrong metric for this project, and why PR-AUC/precision/recall will be used for model comparison instead
+  - `Amount` by class: fraud has a *higher mean* (£122 vs £88) but *lower median* (£9.25 vs £22.00) than legitimate transactions — suggesting a mix of small-value fraud (possibly card-testing) rather than fraud simply skewing toward large purchases
+  - `Time` by class: fraud disproportionately spikes during low-traffic windows, consistent with overnight hours — a real-world pattern (fraud is less likely to be noticed while the cardholder is asleep) that directly motivated the `hour_of_day` feature above
+  - Correlation of `V1`-`V28` with `Class`: `V17`, `V14`, `V12`, `V10` showed the strongest linear signal; this is a baseline to compare against XGBoost's feature importances in Phase 1's modelling step — agreement would be reassuring, disagreement wouldn't necessarily mean a bug, since correlation only captures linear relationships
+
+**Next up (Day 2):** train baseline models (Logistic Regression, XGBoost, Isolation Forest) and compare on precision/recall/PR-AUC.
 
 ---
 
-*See also: [UK-Tech-Job-Analyzer](#) and [Credit Risk ML Pipeline](#).*
+*Part of a data science portfolio targeting data science & fintech roles. See also: [UK-Tech-Job-Analyzer](#) and [Credit Risk ML Pipeline](#).*
