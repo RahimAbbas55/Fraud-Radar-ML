@@ -7,9 +7,16 @@
 """
 import pandas as pd
 from kafka import KafkaConsumer
+from kafka import KafkaConsumer, KafkaProducer
 from src.config import TARGET_COL
 from src.train import load_model
-from src.kafka_utils import KAFKA_BOOTSTRAP_SERVERS, TRANSACTIONS_TOPIC, json_deserializer
+from src.kafka_utils import (
+    KAFKA_BOOTSTRAP_SERVERS,
+    TRANSACTIONS_TOPIC,
+    FRAUD_SCORES_TOPIC,
+    json_deserializer,
+    json_serializer,
+)
 
 '''
     Fields present in the raw Kafka message that are NOT model features —
@@ -24,19 +31,29 @@ def build_consumer() -> KafkaConsumer:
         value_deserializer=json_deserializer,
         auto_offset_reset="earliest",  # see explanation below
     )
+"""
+    Producer used to publish scored results downstream. Kept separate
+    from build_consumer() since it's a genuinely different Kafka client
+    role (producing, not consuming), even though both live in this file.
+"""
+def build_score_producer() -> KafkaProducer:
+    return KafkaProducer(
+        bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
+        value_serializer=json_serializer,
+    )
+"""
+    Strip non-feature fields (transaction_id, the real Class label)
+    from a raw Kafka message, leaving only what the model expects.
+"""
 def extract_features(message: dict) -> dict:
-    """
-        Strip non-feature fields (transaction_id, the real Class label)
-        from a raw Kafka message, leaving only what the model expects.
-    """
+
     return {k: v for k, v in message.items() if k not in NON_FEATURE_FIELDS}
 
-
+"""
+    Score a single transaction message and return a result dict
+    combining the original transaction_id with the model's prediction.
+"""
 def score_transaction(model, message: dict) -> dict:
-    """
-        Score a single transaction message and return a result dict
-        combining the original transaction_id with the model's prediction.
-    """
     features = extract_features(message)
     X = pd.DataFrame([features])
     fraud_probability = model.predict_proba(X)[:, 1][0]
@@ -52,12 +69,21 @@ def score_transaction(model, message: dict) -> dict:
 def main():
     print("Loading XGBoost model...")
     model = load_model("xgboost")
+
     print(f"Connecting to Kafka, subscribing to '{TRANSACTIONS_TOPIC}'...")
     consumer = build_consumer()
+    score_producer = build_score_producer()
+
     print("Listening for transactions (Ctrl+C to stop)...\n")
     try:
         for message in consumer:
             result = score_transaction(model, message.value)
+
+            # Publish the scored result downstream, so other services
+            # (persistence, a future API, a dashboard) can consume
+            # fully-scored results without needing the model themselves.
+            score_producer.send(FRAUD_SCORES_TOPIC, value=result)
+
             flag = "🚨 FRAUD" if result["prediction"] == 1 else "  ok"
             print(f"[{flag}] txn_id={result['transaction_id']:>6} "
                   f"prob={result['fraud_probability']:.4f} "
@@ -66,7 +92,8 @@ def main():
         print("\nStopped by user.")
     finally:
         consumer.close()
-
+        score_producer.flush()  # ensure any pending scored messages are sent, before the process actually exits
+        score_producer.close()
 
 if __name__ == "__main__":
     main()
