@@ -126,7 +126,35 @@ Expected shape after download: 284,807 rows × 31 columns (`Time`, `V1`–`V28`,
 
 **Honest takeaway:** XGBoost is the clear leader on offline metrics and the most realistic production candidate right now. Isolation Forest's architectural value (catching novel fraud patterns without labels) remains a valid reason to keep it in the system design, but this baseline doesn't yet demonstrate that value — it was dominated by XGBoost on every metric tested, tuning included.
 
-**Next up (Day 3):** Kafka streaming setup — Docker Compose broker, producer replay script, consumer service.
+## Kafka Setup (Phase 2)
+
+Start the Kafka broker:
+```bash
+docker compose up -d
+docker compose ps  # confirm status shows (healthy)
+```
+
+Create the required topics (one-time step — topics don't persist if the container is removed via `docker compose down`, only if stopped via `docker compose stop`):
+```bash
+docker exec fraud-radar-kafka kafka-topics --create \
+  --topic transactions \
+  --bootstrap-server localhost:9092 \
+  --partitions 1 \
+  --replication-factor 1
+
+docker exec fraud-radar-kafka kafka-topics --create \
+  --topic fraud-scores \
+  --bootstrap-server localhost:9092 \
+  --partitions 1 \
+  --replication-factor 1
+```
+
+**Architecture note:** both topics use a single partition and replication factor of 1 — appropriate for a single-broker demo setup where strict message ordering matters more than parallel throughput. `transactions` carries raw replayed transactions from the producer; `fraud-scores` carries the consumer's scored output (risk score + decision).
+
+Verify topics exist:
+```bash
+docker exec fraud-radar-kafka kafka-topics --list --bootstrap-server localhost:9092
+```
 
 ---
 
