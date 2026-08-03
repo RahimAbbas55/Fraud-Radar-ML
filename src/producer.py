@@ -14,6 +14,7 @@ import argparse
 import time
 from kafka import KafkaProducer
 from src.data_loader import load_and_validate
+from src.features import add_time_of_day_feature
 from src.kafka_utils import KAFKA_BOOTSTRAP_SERVERS, TRANSACTIONS_TOPIC, json_serializer
 
 
@@ -33,7 +34,7 @@ def build_message(row_index, row) -> dict:
 
 def replay_transactions(producer: KafkaProducer, delay: float, limit: int | None):
     df = load_and_validate()
-
+    df = add_time_of_day_feature(df)
     if limit is not None:
         df = df.head(limit)
 
