@@ -5,7 +5,6 @@
         This is a long-running service, not a one-shot script — it runs until manually stopped.
     Run as: python -m src.consumer
 """
-import pandas as pd
 from kafka import KafkaConsumer
 from kafka import KafkaConsumer, KafkaProducer
 from src.config import TARGET_COL
@@ -54,13 +53,21 @@ def extract_features(message: dict) -> dict:
     combining the original transaction_id with the model's prediction.
 """
 def score_transaction(model, message: dict) -> dict:
+    import pandas as pd
     features = extract_features(message)
     X = pd.DataFrame([features])
+    expected_features = model.get_booster().feature_names
+    missing = set(expected_features) - set(X.columns)
+    if missing:
+        raise ValueError(f"Message is missing required features: {missing}")
+    X = X[expected_features]
+
     fraud_probability = model.predict_proba(X)[:, 1][0]
     prediction = int(fraud_probability >= 0.5)
+
     return {
         "transaction_id": message.get("transaction_id"),
-        "true_class": message.get(TARGET_COL),  # kept for our own evaluation, not shown to "production"
+        "true_class": message.get(TARGET_COL),
         "fraud_probability": float(fraud_probability),
         "prediction": prediction,
     }
