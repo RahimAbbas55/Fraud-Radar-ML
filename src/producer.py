@@ -23,6 +23,13 @@ def build_producer() -> KafkaProducer:
         value_serializer=json_serializer,
     )
 
+def build_message(row_index, row) -> dict:
+    """
+        Convert a single pandas row into a JSON-serializable message dict.(For testing without overloading kafka.)
+    """
+    message = row.to_dict()
+    message["transaction_id"] = int(row_index)
+    return message
 
 def replay_transactions(producer: KafkaProducer, delay: float, limit: int | None):
     df = load_and_validate()
@@ -35,8 +42,7 @@ def replay_transactions(producer: KafkaProducer, delay: float, limit: int | None
 
     sent_count = 0
     for idx, row in df.iterrows():
-        message = row.to_dict()
-        message["transaction_id"] = int(idx)
+        message = build_message(idx, row)
         producer.send(TRANSACTIONS_TOPIC, value=message)
         sent_count += 1
         # Flush periodically (not every message — that would be slow)
