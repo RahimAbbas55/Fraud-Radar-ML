@@ -149,6 +149,20 @@ docker exec fraud-radar-kafka kafka-topics --create \
   --replication-factor 1
 ```
 
+### Day 3 — Kafka streaming setup (in progress)
+- Added `docker-compose.yml`: single-broker Kafka in KRaft mode (no Zookeeper) — a deliberate scope choice for a portfolio-scale demo over a multi-broker cluster
+- Created `transactions` and `fraud-scores` topics (1 partition, replication factor 1 each — appropriate for a single-broker setup where ordering matters more than parallel throughput)
+- Added `src/kafka_utils.py`: shared broker config and JSON serialization/deserialization, reused by both producer and consumer
+- Added `src/producer.py`: replays `creditcard.csv` row-by-row to the `transactions` topic with a configurable delay, simulating near-real-time arrival
+- Added `src/consumer.py`: long-running service that scores each incoming transaction with the trained XGBoost model in real time, then publishes results to `fraud-scores`
+- **Bug found and fixed during end-to-end testing:** the producer wasn't applying the `hour_of_day` feature before sending messages, causing every scored transaction to fail with a missing-feature error the moment producer and consumer actually ran together — unit tests hadn't caught this since they used hand-built messages that already included the feature. Fixed by wiring `add_time_of_day_feature` into the producer.
+- **Second bug found via testing, not production:** a hand-written test with columns in a different order than training exposed that `score_transaction` had no explicit safeguard against feature order — it was silently relying on incoming message key order matching training order. Fixed by explicitly reindexing to `model.get_booster().feature_names` before scoring, making the consumer robust to arbitrary field order.
+- **End-to-end verification:** ran the full pipeline live — 5,000 transactions replayed through Kafka and scored in real time. Result: 1 fraud case flagged (`txn_id=4920`, 99.99% confidence), correctly matching the true label. Zero false positives across the batch. A smaller, earlier 50-transaction run confirmed message count integrity (50 sent, 50 scored, no drops).
+
+**Honest note on scope:** Kafka topics were created manually via CLI, not yet provisioned in code — acceptable for now, but worth automating if this pipeline needs to be stood up repeatably (e.g. in CI or a fresh environment). Scored results are currently only printed to the terminal, not yet persisted — that's the next piece of work.
+
+**Next up:** persist scored results to SQLite, containerize producer/consumer alongside the Kafka broker so `docker compose up` runs the full pipeline in one command, then Phase 3 (Radar-style rules engine, decision bands, SHAP explainability, FastAPI endpoint).
+
 **Architecture note:** both topics use a single partition and replication factor of 1 — appropriate for a single-broker demo setup where strict message ordering matters more than parallel throughput. `transactions` carries raw replayed transactions from the producer; `fraud-scores` carries the consumer's scored output (risk score + decision).
 
 Verify topics exist:
