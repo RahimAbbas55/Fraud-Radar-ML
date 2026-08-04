@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from src.train import load_model
 from src.features import add_time_of_day_feature
 from src.consumer import score_transaction
+from src.explain import explain_transaction
 _state = {}  # holds the loaded model across requests
 
 @asynccontextmanager
@@ -35,12 +36,18 @@ class TransactionInput(BaseModel):
 @app.post("/score")
 def score(transaction: TransactionInput):
     model = _state["model"]
-
     df = pd.DataFrame([transaction.model_dump()])
-    df = add_time_of_day_feature(df)  # same derivation the producer applies
+    df = add_time_of_day_feature(df)
     message = df.iloc[0].to_dict()
-
-    return score_transaction(model, message)
+    result = score_transaction(model, message)
+    # Only compute SHAP for flagged transactions 
+    if result["decision"] in ("review", "block"):
+        expected_features = model.get_booster().feature_names
+        X = df[expected_features]
+        result["explanation"] = explain_transaction(model, X)
+    else:
+        result["explanation"] = None
+    return result
 
 @app.get("/health")
 def health():
