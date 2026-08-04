@@ -20,7 +20,8 @@ def init_db(db_path: Path = DB_PATH) -> None:
             transaction_id INTEGER PRIMARY KEY,
             true_class INTEGER,
             fraud_probability REAL NOT NULL,
-            prediction INTEGER NOT NULL,
+            decision TEXT NOT NULL,
+            fired_rules TEXT,
             scored_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -31,16 +32,18 @@ def init_db(db_path: Path = DB_PATH) -> None:
     Insert one scored transaction result into the database.
 """
 def save_scored_result(result: dict, db_path: Path = DB_PATH) -> None:
+    import json
     conn = sqlite3.connect(db_path)
     conn.execute("""
         INSERT OR REPLACE INTO scored_transactions
-            (transaction_id, true_class, fraud_probability, prediction)
-        VALUES (?, ?, ?, ?)
+            (transaction_id, true_class, fraud_probability, decision, fired_rules)
+        VALUES (?, ?, ?, ?, ?)
     """, (
         result["transaction_id"],
         result["true_class"],
         result["fraud_probability"],
-        result["prediction"],
+        result["decision"],
+        json.dumps(result["fired_rules"]),  # store as JSON text, since SQLite has no list type
     ))
     conn.commit()
     conn.close()
@@ -54,7 +57,7 @@ def get_flagged_transactions(db_path: Path = DB_PATH, limit: int = 50) -> list[d
     conn.row_factory = sqlite3.Row  # lets us access columns by name, not just index
     rows = conn.execute("""
         SELECT * FROM scored_transactions
-        WHERE prediction = 1
+        WHERE decision IN ('block', 'review')
         ORDER BY scored_at DESC
         LIMIT ?
     """, (limit,)).fetchall()

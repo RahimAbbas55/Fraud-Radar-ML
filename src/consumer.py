@@ -17,7 +17,8 @@ from src.kafka_utils import (
     json_serializer,
 )
 from src.persistence import init_db, save_scored_result
-
+from src.decision import make_decision
+import pandas as pd
 '''
     Fields present in the raw Kafka message that are NOT model features —
     these must be stripped before scoring, or XGBoost will either error
@@ -54,7 +55,6 @@ def extract_features(message: dict) -> dict:
     combining the original transaction_id with the model's prediction.
 """
 def score_transaction(model, message: dict) -> dict:
-    import pandas as pd
     features = extract_features(message)
     X = pd.DataFrame([features])
     expected_features = model.get_booster().feature_names
@@ -64,13 +64,14 @@ def score_transaction(model, message: dict) -> dict:
     X = X[expected_features]
 
     fraud_probability = model.predict_proba(X)[:, 1][0]
-    prediction = int(fraud_probability >= 0.5)
+    decision = make_decision(features, fraud_probability)
 
     return {
         "transaction_id": message.get("transaction_id"),
         "true_class": message.get(TARGET_COL),
         "fraud_probability": float(fraud_probability),
-        "prediction": prediction,
+        "decision": decision["decision"],
+        "fired_rules": decision["fired_rules"],
     }
 
 
@@ -95,10 +96,12 @@ def main():
             # fully-scored results without needing the model themselves.
             score_producer.send(FRAUD_SCORES_TOPIC, value=result)
 
-            flag = "🚨 FRAUD" if result["prediction"] == 1 else "  ok"
+            decision = result["decision"]
+            flag = {"block": "🚨 BLOCK", "review": "⚠️  REVIEW", "allow": "  allow "}[decision]
+            rules_note = f" [{len(result['fired_rules'])} rule(s) fired]" if result["fired_rules"] else ""
             print(f"[{flag}] txn_id={result['transaction_id']:>6} "
                   f"prob={result['fraud_probability']:.4f} "
-                  f"(actual class={result['true_class']})")
+                  f"(actual class={result['true_class']}){rules_note}")
     except KeyboardInterrupt:
         print("\nStopped by user.")
     finally:
