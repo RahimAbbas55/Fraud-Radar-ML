@@ -5,22 +5,17 @@ services:
     ports:
       - "9092:9092"
     environment:
-      # KRaft mode: this single broker also acts as its own controller,
-      # replacing what Zookeeper used to handle in older Kafka setups.
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_LISTENERS: HOST://0.0.0.0:9092,INTERNAL://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: HOST://localhost:9092,INTERNAL://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,HOST:PLAINTEXT,INTERNAL:PLAINTEXT
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      # Single-broker setup: replication factor of 1 is the only valid
-      # option (you can't replicate across brokers that don't exist).
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      # A random but fixed cluster ID, required for KRaft mode.
       CLUSTER_ID: fraud-radar-cluster-01
     healthcheck:
       test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
@@ -28,3 +23,30 @@ services:
       timeout: 10s
       retries: 5
       start_period: 20s
+
+  producer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python -m src.producer --limit 500 --delay 0.05
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092  # internal listener, not localhost
+    volumes:
+      - ./data:/app/data  # dataset needs to be visible inside the container
+    depends_on:
+      kafka:
+        condition: service_healthy  # wait for Kafka to be genuinely ready, not just started
+
+  consumer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python -m src.consumer
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    volumes:
+      - ./data:/app/data      # for the SQLite database file and dataset
+      - ./models:/app/models  # trained model needs to be visible inside the container
+    depends_on:
+      kafka:
+        condition: service_healthy

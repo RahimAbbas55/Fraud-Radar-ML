@@ -5,10 +5,10 @@
     address ever changes, there's one place to fix it, not two.
 """
 import json
-
+import os
 # Matches the port exposed in docker-compose.yml (Stage 1) and the
 # advertised listener Kafka itself reports to clients.
-KAFKA_BOOTSTRAP_SERVERS = "localhost:9092"
+KAFKA_BOOTSTRAP_SERVERS = os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 TRANSACTIONS_TOPIC = "transactions"
 FRAUD_SCORES_TOPIC = "fraud-scores"
 
