@@ -22,7 +22,7 @@ def load_raw_data(path=RAW_DATA_PATH) -> pd.DataFrame:
  
 def validate_schema(df: pd.DataFrame) -> None:
     """
-    Sanity-check the loaded dataframe against known-good expectations
+    Checking if the loaded dataframe against known-good expectations
     for this dataset. Fails loudly and early if something is off,
     rather than letting a malformed dataset silently corrupt downstream
     model training.
