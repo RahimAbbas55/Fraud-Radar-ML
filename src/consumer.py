@@ -16,6 +16,7 @@ from src.kafka_utils import (
     json_deserializer,
     json_serializer,
 )
+from src.persistence import init_db, save_scored_result
 
 '''
     Fields present in the raw Kafka message that are NOT model features —
@@ -28,7 +29,7 @@ def build_consumer() -> KafkaConsumer:
         TRANSACTIONS_TOPIC,
         bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
         value_deserializer=json_deserializer,
-        auto_offset_reset="earliest",  # see explanation below
+        auto_offset_reset="earliest", 
     )
 """
     Producer used to publish scored results downstream. Kept separate
@@ -77,6 +78,9 @@ def main():
     print("Loading XGBoost model...")
     model = load_model("xgboost")
 
+    print("Initializing database...")
+    init_db()
+
     print(f"Connecting to Kafka, subscribing to '{TRANSACTIONS_TOPIC}'...")
     consumer = build_consumer()
     score_producer = build_score_producer()
@@ -85,7 +89,7 @@ def main():
     try:
         for message in consumer:
             result = score_transaction(model, message.value)
-
+            save_scored_result(result)  # persist the scored result to the database
             # Publish the scored result downstream, so other services
             # (persistence, a future API, a dashboard) can consume
             # fully-scored results without needing the model themselves.
