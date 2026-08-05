@@ -4,11 +4,12 @@ data/*.csv
 data/*.zip
 !data/.gitkeep
 
+
 # Models
 models/*.pkl
-models/*.joblib
 models/*.json
 !models/.gitkeep
+!models/xgboost.joblib
 
 # Python
 __pycache__/
