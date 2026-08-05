@@ -97,7 +97,8 @@ Expected shape after download: 284,807 rows × 31 columns (`Time`, `V1`–`V28`,
 - [x] **Phase 1 — Data & Modelling**: EDA, supervised vs. unsupervised model comparison (precision/recall/PR-AUC)
 - [x] Phase 2, Day 3 — Kafka broker, topics, producer, consumer, SQLite persistence, containerization, end-to-end verification
 - [x] **Phase 2 — Kafka Streaming Setup**: Docker Compose Kafka broker, producer replay script, consumer service
-- [ ] **Phase 3 — Radar-Style Decision Layer + API**: rules engine, risk score + decision bands, SHAP explainability, FastAPI endpoint
+- [x] Phase 3, Day 4 — rules engine, decision layer, SHAP explainability, FastAPI endpoint, threshold validation
+- [x] **Phase 3 — Radar-Style Decision Layer + API**: rules engine, risk score + decision bands, SHAP explainability, FastAPI endpoint
 - [ ] **Phase 4 — Monitoring, Docs, Deployment**: latency/throughput benchmarking, architecture docs, AWS deployment
 
 ## Progress Log
@@ -173,6 +174,19 @@ Verify topics exist:
 ```bash
 docker exec fraud-radar-kafka kafka-topics --list --bootstrap-server localhost:9092
 ```
+
+### Day 4 — Radar-style decision layer, SHAP explainability, FastAPI endpoint
+- Added `src/rules.py`: rules engine with two rules grounded directly in Day 1 EDA findings — `high_amount` (a guardrail, not a strong standalone signal per EDA) and `unusual_hour_borderline_score` (fires only when an overnight hour combines with an already-borderline ML score, avoiding a naive "flag everything at night" false-positive problem)
+- Added `src/decision.py`: combines the ML probability and fired rules into a `allow`/`review`/`block` decision band. Key design choice: a fired rule can only escalate a decision toward more caution, never downgrade it — verified explicitly via tests, not just assumed
+- Wired the decision layer into `consumer.py`, replacing the old binary 0.5-threshold logic; updated the SQLite schema (`decision`, `fired_rules` columns replacing the old `prediction` column)
+- Added `src/explain.py`: SHAP (TreeExplainer) explainability, computed only for `review`/`block` decisions — a deliberate latency tradeoff, since SHAP is meaningfully slower than a raw prediction and unnecessary for the vast majority of obviously-legitimate transactions
+- Added `src/api.py`: FastAPI `/score` endpoint for synchronous scoring, reusing `score_transaction` from the consumer so the Kafka pipeline and the API produce identical decisions by construction, not by coincidence. `/health` endpoint added alongside it
+- **Bug found via testing, not production:** a `TestClient` opened in isolation inside one test (for a 422 validation check) triggered the app's `lifespan` shutdown on exit, silently clearing the shared `_state` dict and breaking a *different*, still-open test's model access. Traced to the root cause (shared module-level state across `TestClient` instances) and fixed by removing the unnecessary isolation, rather than patching around the symptom
+- **Threshold validation (Stage 11):** ran the real Day 2 test set (56,962 transactions, 98 real fraud) through the full decision layer. Results: combined `block`+`review` recall of 84.7% (83/98) — a small genuine improvement over Day 2's raw 83.7% — and 89.0% precision within the `block` band specifically, better than Day 2's raw 86.3%. Honest finding: the `review` band is under-earning its keep, at 1.3% precision (2 real fraud out of 154 flagged) — most of what lands there is normal, not genuinely ambiguous, activity. Flagged `ALLOW_THRESHOLD` (currently 0.3) as a concrete candidate for tightening in future tuning, rather than treated as a solved, final value.
+
+**Honest takeaway:** the decision layer is a genuine improvement over a raw probability threshold — better recall, better block-band precision, full explainability on every flagged decision — but the review band's current scope isn't yet pulling its weight, a specific and fixable gap rather than a vague "needs more tuning" statement.
+
+**Next up:** Phase 4 — latency/throughput benchmarking, architecture documentation, AWS deployment.
 
 ---
 
