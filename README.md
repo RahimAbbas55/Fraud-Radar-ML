@@ -99,7 +99,8 @@ Expected shape after download: 284,807 rows × 31 columns (`Time`, `V1`–`V28`,
 - [x] **Phase 2 — Kafka Streaming Setup**: Docker Compose Kafka broker, producer replay script, consumer service
 - [x] Phase 3, Day 4 — rules engine, decision layer, SHAP explainability, FastAPI endpoint, threshold validation
 - [x] **Phase 3 — Radar-Style Decision Layer + API**: rules engine, risk score + decision bands, SHAP explainability, FastAPI endpoint
-- [ ] **Phase 4 — Monitoring, Docs, Deployment**: latency/throughput benchmarking, architecture docs, AWS deployment
+- [x] Phase 4, Day 5 — benchmarking, ARCHITECTURE.md, Docker/ECR/EC2 deployment, live verification
+- [x] **Phase 4 — Monitoring, Docs, Deployment**: latency/throughput benchmarking, architecture docs, AWS deployment
 
 ## Progress Log
 
@@ -184,9 +185,22 @@ docker exec fraud-radar-kafka kafka-topics --list --bootstrap-server localhost:9
 - **Bug found via testing, not production:** a `TestClient` opened in isolation inside one test (for a 422 validation check) triggered the app's `lifespan` shutdown on exit, silently clearing the shared `_state` dict and breaking a *different*, still-open test's model access. Traced to the root cause (shared module-level state across `TestClient` instances) and fixed by removing the unnecessary isolation, rather than patching around the symptom
 - **Threshold validation (Stage 11):** ran the real Day 2 test set (56,962 transactions, 98 real fraud) through the full decision layer. Results: combined `block`+`review` recall of 84.7% (83/98) — a small genuine improvement over Day 2's raw 83.7% — and 89.0% precision within the `block` band specifically, better than Day 2's raw 86.3%. Honest finding: the `review` band is under-earning its keep, at 1.3% precision (2 real fraud out of 154 flagged) — most of what lands there is normal, not genuinely ambiguous, activity. Flagged `ALLOW_THRESHOLD` (currently 0.3) as a concrete candidate for tightening in future tuning, rather than treated as a solved, final value.
 
-**Honest takeaway:** the decision layer is a genuine improvement over a raw probability threshold — better recall, better block-band precision, full explainability on every flagged decision — but the review band's current scope isn't yet pulling its weight, a specific and fixable gap rather than a vague "needs more tuning" statement.
+### Day 5 — Benchmarking, architecture docs, AWS deployment
+- Added `src/benchmark.py`: API latency/throughput benchmark via FastAPI's TestClient. Result: 257 req/sec, p50 3.38ms, p95 5.88ms, p99 7.16ms (500 requests, ~10% mixed to trigger review/block + SHAP)
+- Added `src/benchmark_kafka.py`: Kafka consumer throughput benchmark using the real, unmodified consumer. Result: 154.1 messages/sec sustained (1,000 messages, includes SQLite write + re-publish per message)
+- Added `ARCHITECTURE.md`: full system documentation — component breakdown, every major design decision from all 4 phases with the reasoning behind it, and an honest limitations section
+- Fixed Docker build for `linux/amd64` (Apple Silicon builds default to arm64, EC2 needs amd64) via `docker buildx` and `$TARGETPLATFORM`
+- Set up GitHub Actions to build and push to ECR automatically on push to main
+- **Two real, connected bugs found during deployment, not before:**
+  - A trailing comment from an earlier commit landed on the same line as the Dockerfile's `CMD` instruction, silently breaking the array syntax — the container pulled fine but failed to start (`[uvicorn,: not found`)
+  - `requirements.txt` had been overwritten at some point with a full local-environment dependency dump (pinned versions specific to my Mac, including packages like `jupyterlab` that have nothing to do with the API) instead of the actual project dependencies — this caused a `pip install` failure that Docker's build cache was silently hiding, since the CMD fix never touched `requirements.txt` and so never invalidated the broken cached layer. Only surfaced by forcing a `--no-cache` rebuild. This also explains why GitHub Actions appeared to silently not trigger — it was very likely failing the same way, not skipping
+  - Fixed both: cleaned Dockerfile, restored a minimal `requirements.txt` with no pinned versions
+- Deployed to a dedicated EC2 instance: IAM instance role for ECR pull (no AWS keys on the server), SSH restricted to a single IP, API port open publicly
+- Verified `/health` and `/score` live over the real internet, not just locally — confirmed a `review` decision with a correctly fired rule and a real SHAP explanation returned from the deployed container
 
-**Next up:** Phase 4 — latency/throughput benchmarking, architecture documentation, AWS deployment.
+**Honest note:** the EC2 instance is stopped between demo sessions to control cost. [Set up with a static Elastic IP, so the link stays valid whenever it's running. / No Elastic IP configured — the public IP changes on restart, so the live link may not always be reachable.]
+
+**Project status: Phase 4 complete. All four phases — data/modelling, streaming, decision layer + explainability, and deployment — are built, tested, and verified end to end.**
 
 ---
 
